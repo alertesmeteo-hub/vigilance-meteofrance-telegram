@@ -29,8 +29,9 @@ def checked(response, service):
 def main():
     dry_run = os.environ.get("DRY_RUN", "true").lower() == "true"
     app_id = required("MF_APPLICATION_ID")
+    print("Authentification OAuth2", flush=True)
     auth = checked(requests.post(
-        "https://portail-api.meteofrance.fr/token",
+        "https://portail-api.meteofrance.fr/oauth2/token",
         headers={"Authorization": "Basic " + app_id},
         data={"grant_type": "client_credentials"}, timeout=30,
     ), "Authentification Météo-France").json()
@@ -39,6 +40,7 @@ def main():
     def fetch(endpoint):
         return checked(requests.get(BASE + endpoint, headers=headers, timeout=60), "Météo-France")
 
+    print("Téléchargement carte JSON", flush=True)
     carte = fetch("cartevigilance/encours").json()
     product = carte["product"]
     published = datetime.fromisoformat(product["update_time"].replace("Z", "+00:00"))
@@ -51,6 +53,7 @@ def main():
         < datetime.fromisoformat(p["end_validity_time"].replace("Z", "+00:00")) for p in periods
     ):
         raise RuntimeError("Carte hors période de validité : aucun envoi.")
+    print("Téléchargement image", flush=True)
     png_response = fetch("vignettenationale-J-et-J1/encours")
     png = png_response.content
     if not png.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -59,6 +62,7 @@ def main():
     after = fetch("cartevigilance/encours").json()
     if after["product"]["update_time"] != product["update_time"]:
         raise RuntimeError("Bulletin en cours de mise à jour : relancer plus tard.")
+    print("Téléchargement outre-mer", flush=True)
     om = fetch("vigilanceom/flux/dernier").content
     with zipfile.ZipFile(io.BytesIO(om)) as archive:
         if not archive.namelist() or archive.testzip() is not None:

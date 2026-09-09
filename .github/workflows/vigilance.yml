@@ -1,0 +1,52 @@
+name: Vigilance quotidienne Telegram
+on:
+  push:
+    paths: ['send_vigilance.py', '.github/workflows/vigilance.yml']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Prévisualiser sans envoyer sur Telegram'
+        type: boolean
+        default: true
+  schedule:
+    - cron: '0 7 * * *'
+      timezone: Europe/Paris
+permissions:
+  contents: read
+concurrency:
+  group: vigilance-telegram
+  cancel-in-progress: false
+jobs:
+  verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m py_compile send_vigilance.py
+  publication:
+    needs: verification
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.VIGILANCE_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'requests>=2.32.4,<3'
+      - name: Préparer ou publier la vigilance
+        env:
+          MF_APPLICATION_ID: ${{ secrets.MF_APPLICATION_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: '@Alerte_meteo'
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+        run: python send_vigilance.py
+      - name: Conserver les produits officiels et la prévisualisation
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vigilance-${{ github.run_id }}
+          path: output/
+          retention-days: 7

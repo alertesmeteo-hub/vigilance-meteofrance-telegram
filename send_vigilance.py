@@ -21,7 +21,7 @@ def required(name):
 
 
 def checked(response, service):
-    if not response.ok:
+    if not 200 <= response.status_code < 300:
         raise RuntimeError(f"{service} : erreur HTTP {response.status_code}")
     return response
 
@@ -30,11 +30,16 @@ def main():
     dry_run = os.environ.get("DRY_RUN", "true").lower() == "true"
     app_id = required("MF_APPLICATION_ID")
     print("Authentification OAuth2", flush=True)
-    auth = checked(requests.post(
-        "https://portail-api.meteofrance.fr/oauth2/token",
-        headers={"Authorization": "Basic " + app_id},
-        data={"grant_type": "client_credentials"}, timeout=30,
-    ), "Authentification Météo-France").json()
+    auth_response = checked(requests.post(
+        "https://portail-api.meteofrance.fr/token",
+        headers={"Authorization": "Basic " + app_id, "Accept": "application/json"},
+        data={"grant_type": "client_credentials"}, timeout=30, allow_redirects=False,
+    ), "Authentification Météo-France")
+    try:
+        auth = auth_response.json()
+    except ValueError:
+        is_html = "text/html" in auth_response.headers.get("Content-Type", "").lower()
+        raise RuntimeError("Authentification : réponse HTML au lieu de JSON." if is_html else "Authentification : réponse non JSON.")
     headers = {"Authorization": "Bearer " + auth["access_token"]}
 
     def fetch(endpoint):

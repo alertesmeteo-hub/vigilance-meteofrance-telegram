@@ -20,9 +20,9 @@ Dans Settings → Secrets and variables → Actions → Secrets, ajouter :
 | Secret | Valeur |
 | --- | --- |
 | TELEGRAM_BOT_TOKEN | Token privé fourni par BotFather pour @AlertesMeteo_bot |
-| MF_APPLICATION_ID | Identifiant d'application OAuth2 Météo-France, valeur après Basic dans la commande de génération de token du portail |
+| MF_API_KEY | Clé de type API Key pour Bulletin Vigilance |
 
-Créer ou utiliser un compte sur https://portail-api.meteofrance.fr et souscrire à l'API Bulletin Vigilance. Dans la génération OAuth2, récupérer l'identifiant d'application. Le programme demande un nouveau token temporaire à chaque exécution. Ne pas utiliser comme identifiant le token temporaire d'une heure.
+Créer ou utiliser un compte sur https://portail-api.meteofrance.fr et souscrire à l'API Bulletin Vigilance. Choisir le mode API Key pour Bulletin Vigilance. Le programme utilise cette clé directement dans l’en-tête apikey. Le secret MF_APPLICATION_ID peut être conservé mais n’est plus utilisé. Renouveler MF_API_KEY avant son expiration.
 
 Ne jamais mettre ces secrets dans un fichier, une issue, un message ou le README. Le bot doit être administrateur du canal avec le droit de publier.
 

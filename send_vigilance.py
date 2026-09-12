@@ -2,6 +2,7 @@
 import html
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -53,7 +54,7 @@ def summary(product, now):
         for (color, name), departments in sorted(groups.items(), key=lambda value: (-value[0][0], value[0][1])):
             emoji, label = COLORS[color]
             lines.append(f"{emoji} <b>{html.escape(name)} :</b> {html.escape(', '.join(sorted(departments))) }.")
-    return "\n".join(lines)
+    return "\n".join(lines), bool(groups)
 
 def send_messages(bot, chat, message):
     parts, current = [], ""
@@ -69,6 +70,29 @@ def send_messages(bot, chat, message):
         if not result.ok or not result.json().get("ok"):
             raise RuntimeError("Telegram a refusé la publication.")
 
+def official_map_pdf():
+    page = checked(requests.get("https://vigilance.meteofrance.fr/fr", timeout=60)).text
+    links = re.findall(r'https://rwg\.meteofrance\.com[^"\']+', page)
+    url = next((html.unescape(link) for link in links if "report_type=vigilancev6" in link and "version%20PDF" in link), None)
+    if not url:
+        raise RuntimeError("Carte officielle Météo-France introuvable.")
+    document = checked(requests.get(url, timeout=60))
+    if not document.content.startswith(b"%PDF"):
+        raise RuntimeError("La carte officielle n'est pas au format PDF.")
+    return document.content
+
+
+def send_official_map(bot, chat, document):
+    result = requests.post(
+        "https://api.telegram.org/bot" + bot + "/sendDocument",
+        data={"chat_id": chat, "caption": "🗺 <b>Carte officielle Météo-France</b>", "parse_mode": "HTML"},
+        files={"document": ("carte-vigilance-meteo-france.pdf", document, "application/pdf")},
+        timeout=90,
+    )
+    if not result.ok or not result.json().get("ok"):
+        raise RuntimeError("Telegram a refusé l'envoi de la carte.")
+
+
 def main():
     dry_run = os.environ.get("DRY_RUN", "true").lower() == "true"
     headers = {"apikey": required("MF_API_KEY")}
@@ -79,16 +103,21 @@ def main():
     now = datetime.now(PARIS)
     if published.tzinfo is None or not timedelta(0) <= now - published <= timedelta(hours=12):
         raise RuntimeError("Carte trop ancienne ou date incohérente : aucun envoi.")
-    message = summary(product, now) + "\n\nSource : https://vigilance.meteofrance.fr/fr"
+    message, has_vigilance = summary(product, now)
+    message += "\n\nSource : https://vigilance.meteofrance.fr/fr"
+    document = official_map_pdf() if has_vigilance else None
     os.makedirs("output", exist_ok=True)
     with open("output/carte.json", "w", encoding="utf-8") as file:
         json.dump(carte, file, ensure_ascii=False, indent=2)
     with open("output/message.html", "w", encoding="utf-8") as file:
         file.write(message)
-    if dry_run:
-        print(message)
+    if dry_run:        print(message)
         return
-    send_messages(required("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID", "@Alerte_meteo"), message)
+    bot = required("TELEGRAM_BOT_TOKEN")
+    chat = os.environ.get("TELEGRAM_CHAT_ID", "@Alerte_meteo")
+    send_messages(bot, chat, message)
+    if document:
+        send_official_map(bot, chat, document)
     print("Résumé des vigilances départementales envoyé.")
 
 if __name__ == "__main__":

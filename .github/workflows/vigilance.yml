@@ -7,7 +7,7 @@ on:
         type: boolean
         default: true
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '0 6 * * *'
       timezone: Europe/Paris
 jobs:
   verification:

@@ -1,12 +1,14 @@
 import html
 import json
 import os
+import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
 
 API = "https://public-api.meteofrance.fr/public/DPVigilance/v1/cartevigilance/encours"
+VIGNETTE_API = "https://public-api.meteofrance.fr/public/DPVigilance/v1/vignettenationale-J-et-J1/encours"
 COLORS = {2: "🟡", 3: "🟠", 4: "🔴"}
 PHENOMENA = {
     "1": "vent violent", "2": "pluie-inondation", "3": "orages",
@@ -120,8 +122,42 @@ def need(name):
     return value
 
 
+def fetch_vignette(api_key):
+    for attempt in range(3):
+        try:
+            response = requests.get(
+                VIGNETTE_API,
+                headers={"apikey": api_key, "Accept": "image/png"},
+                timeout=30,
+            )
+            response.raise_for_status()
+            if not response.content.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise RuntimeError("la réponse de Météo-France n'est pas une image PNG")
+            return response.content
+        except (requests.RequestException, RuntimeError) as error:
+            if attempt == 2:
+                print(f"Carte officielle indisponible : {error}")
+                return None
+            time.sleep(2 ** attempt)
+
+
+def send_message(token, text):
+    response = requests.post(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        data={
+            "chat_id": "@Alerte_meteo",
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        },
+        timeout=60,
+    )
+    response.raise_for_status()
+
+
 def main():
-    response = requests.get(API, headers={"apikey": need("MF_API_KEY")}, timeout=60)
+    api_key = need("MF_API_KEY")
+    response = requests.get(API, headers={"apikey": api_key}, timeout=60)
     response.raise_for_status()
     data = response.json()
     product = data["product"]
@@ -129,7 +165,14 @@ def main():
     updated = datetime.fromisoformat(product["update_time"].replace("Z", "+00:00"))
     if not timedelta(0) <= now - updated <= timedelta(hours=12):
         raise RuntimeError("Carte Météo-France trop ancienne.")
-    current = next((period for period in product.get("periods", []) if datetime.fromisoformat(period["begin_validity_time"].replace("Z", "+00:00")) <= now < datetime.fromisoformat(period["end_validity_time"].replace("Z", "+00:00"))), None)
+    current = next(
+        (
+            period for period in product.get("periods", [])
+            if datetime.fromisoformat(period["begin_validity_time"].replace("Z", "+00:00"))
+            <= now < datetime.fromisoformat(period["end_validity_time"].replace("Z", "+00:00"))
+        ),
+        None,
+    )
     if current is None:
         raise RuntimeError("Aucune période de vigilance valide.")
 
@@ -143,15 +186,23 @@ def main():
         for phenomenon in item.get("phenomenon_items", []):
             color = int(phenomenon.get("phenomenon_max_color_id", 1))
             if color in COLORS:
-                label = PHENOMENA.get(str(phenomenon.get("phenomenon_id")), "phénomène météo")
+                label = PHENOMENA.get(
+                    str(phenomenon.get("phenomenon_id")),
+                    "phénomène météo",
+                )
                 groups.setdefault((color, label), []).append(department)
 
     lines = ["<b>• Vigilances en cours :</b>"]
     if not groups:
-        lines.append("🟢 <b>Vigilance verte :</b> aucun département en vigilance jaune, orange ou rouge.")
+        lines.append(
+            "🟢 <b>Vigilance verte :</b> aucun département en vigilance jaune, orange ou rouge."
+        )
     else:
         for (color, label), departments in sorted(groups.items(), reverse=True):
-            lines.append(f"{COLORS[color]} <b>{html.escape(label)} :</b> {html.escape(', '.join(sorted(departments)))}.")
+            lines.append(
+                f"{COLORS[color]} <b>{html.escape(label)} :</b> "
+                f"{html.escape(', '.join(sorted(departments)))}."
+            )
     text = "\n".join(lines) + "\n\nSource : https://vigilance.meteofrance.fr/fr"
 
     os.makedirs("output", exist_ok=True)
@@ -159,16 +210,34 @@ def main():
         file.write(text)
     with open("output/carte.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False)
+
+    vignette = fetch_vignette(api_key) if groups else None
+    if vignette:
+        with open("output/carte-vigilance.png", "wb") as file:
+            file.write(vignette)
+
     if os.getenv("DRY_RUN", "true").lower() == "true":
         print(text)
+        if groups:
+            print("Carte officielle jointe." if vignette else "Carte officielle indisponible.")
         return
 
-    telegram = requests.post(
-        f"https://api.telegram.org/bot{need('TELEGRAM_BOT_TOKEN')}/sendMessage",
-        data={"chat_id": "@Alerte_meteo", "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
-        timeout=60,
-    )
-    telegram.raise_for_status()
+    token = need("TELEGRAM_BOT_TOKEN")
+    if vignette:
+        photo_data = {"chat_id": "@Alerte_meteo"}
+        if len(text) <= 1024:
+            photo_data.update({"caption": text, "parse_mode": "HTML"})
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendPhoto",
+            data=photo_data,
+            files={"photo": ("carte-vigilance.png", vignette, "image/png")},
+            timeout=60,
+        )
+        response.raise_for_status()
+        if len(text) > 1024:
+            send_message(token, text)
+    else:
+        send_message(token, text)
 
 
 if __name__ == "__main__":

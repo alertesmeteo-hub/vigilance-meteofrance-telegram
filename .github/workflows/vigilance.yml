@@ -1,4 +1,5 @@
 name: Vigilance quotidienne Telegram
+
 on:
   workflow_dispatch:
     inputs:
@@ -7,8 +8,24 @@ on:
         type: boolean
         default: true
   schedule:
-    # GitHub Actions utilise l’heure UTC : 06:00 l’été, 05:00 l’hiver à Paris.
-    - cron: '0 4 * * *'
+    # Créneaux de secours avant 7 h, dédoublonnés par le cache quotidien.
+    - cron: '7 5 * * *'
+      timezone: Europe/Paris
+    - cron: '27 5 * * *'
+      timezone: Europe/Paris
+    - cron: '47 5 * * *'
+      timezone: Europe/Paris
+    - cron: '7 6 * * *'
+      timezone: Europe/Paris
+    - cron: '27 6 * * *'
+      timezone: Europe/Paris
+    - cron: '47 6 * * *'
+      timezone: Europe/Paris
+
+concurrency:
+  group: vigilance-telegram
+  cancel-in-progress: false
+
 jobs:
   verification:
     runs-on: ubuntu-latest
@@ -17,19 +34,42 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - run: python -m py_compile send_vigilance.py
+
   publication:
     needs: verification
     if: github.event_name == 'workflow_dispatch' || vars.VIGILANCE_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - id: paris_date
+        name: Date du jour à Paris
+        run: echo "value=$(TZ=Europe/Paris date +%F)" >> "$GITHUB_OUTPUT"
+      - name: Vérifier l'envoi quotidien
+        id: daily_guard
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: .daily-vigilance-sent
+          key: vigilance-telegram-${{ steps.paris_date.outputs.value }}
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - run: python -m pip install requests
       - name: Publier ou prévisualiser
+        if: github.event_name == 'workflow_dispatch' || steps.daily_guard.outputs.cache-hit != 'true'
         env:
           MF_API_KEY: ${{ secrets.MF_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: '@Alerte_meteo'
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
         run: python send_vigilance.py
+      - name: Mémoriser l'envoi du jour
+        if: github.event_name == 'schedule' && steps.daily_guard.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .daily-vigilance-sent
+          echo "${{ steps.paris_date.outputs.value }}" > .daily-vigilance-sent/date
+      - name: Conserver la mémoire de l'envoi
+        if: github.event_name == 'schedule' && steps.daily_guard.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .daily-vigilance-sent
+          key: vigilance-telegram-${{ steps.paris_date.outputs.value }}

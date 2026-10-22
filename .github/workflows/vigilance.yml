@@ -7,8 +7,8 @@ on:
         type: boolean
         default: true
   schedule:
-    - cron: '15 6 * * *'
-      timezone: Europe/Paris
+    # GitHub Actions utilise l’heure UTC : 06:00 l’été, 05:00 l’hiver à Paris.
+    - cron: '0 4 * * *'
 jobs:
   verification:
     runs-on: ubuntu-latest

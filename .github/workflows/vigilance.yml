@@ -8,19 +8,13 @@ on:
         type: boolean
         default: true
   schedule:
-    # Créneaux de secours avant 7 h, dédoublonnés par le cache quotidien.
-    - cron: '7 5 * * *'
-      timezone: Europe/Paris
-    - cron: '27 5 * * *'
-      timezone: Europe/Paris
-    - cron: '47 5 * * *'
-      timezone: Europe/Paris
-    - cron: '7 6 * * *'
-      timezone: Europe/Paris
-    - cron: '27 6 * * *'
-      timezone: Europe/Paris
-    - cron: '47 6 * * *'
-      timezone: Europe/Paris
+    # Horaires UTC : de 05:07 à 06:47 à Paris l’été, avant 7 h.
+    - cron: '7 3 * * *'
+    - cron: '27 3 * * *'
+    - cron: '47 3 * * *'
+    - cron: '7 4 * * *'
+    - cron: '27 4 * * *'
+    - cron: '47 4 * * *'
 
 concurrency:
   group: vigilance-telegram

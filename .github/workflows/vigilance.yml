@@ -7,10 +7,10 @@ on:
         description: Prévisualiser sans envoyer sur Telegram
         type: boolean
         default: false
-  schedule:
-    # Quatre tentatives entre 06:05 et 06:50, heure de Paris. Le cache n'autorise qu'un seul envoi.
-    - cron: '5,20,35,50 6 * * *'
-      timezone: Europe/Paris
+      automated:
+        description: Déclenchement automatique par cron-job.org
+        type: boolean
+        default: false
 
 concurrency:
   group: vigilance-telegram
@@ -36,7 +36,7 @@ jobs:
         run: echo "value=$(TZ=Europe/Paris date +%F)" >> "$GITHUB_OUTPUT"
       - name: Vérifier l'envoi quotidien
         id: daily_guard
-        if: github.event_name == 'schedule'
+        if: inputs.automated == true
         uses: actions/cache/restore@v4
         with:
           path: .daily-vigilance-sent
@@ -45,20 +45,20 @@ jobs:
         with: { python-version: '3.12' }
       - run: python -m pip install requests
       - name: Publier ou prévisualiser
-        if: github.event_name == 'workflow_dispatch' || steps.daily_guard.outputs.cache-hit != 'true'
+        if: inputs.automated != true || steps.daily_guard.outputs.cache-hit != 'true'
         env:
           MF_API_KEY: ${{ secrets.MF_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: '@Alerte_meteo'
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: python send_vigilance.py
       - name: Mémoriser l'envoi du jour
-        if: github.event_name == 'schedule' && steps.daily_guard.outputs.cache-hit != 'true'
+        if: inputs.automated == true && steps.daily_guard.outputs.cache-hit != 'true'
         run: |
           mkdir -p .daily-vigilance-sent
           echo "${{ steps.paris_date.outputs.value }}" > .daily-vigilance-sent/date
       - name: Conserver la mémoire de l'envoi
-        if: github.event_name == 'schedule' && steps.daily_guard.outputs.cache-hit != 'true'
+        if: inputs.automated == true && steps.daily_guard.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .daily-vigilance-sent

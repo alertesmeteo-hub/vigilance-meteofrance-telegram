@@ -6,15 +6,11 @@ on:
       dry_run:
         description: Prévisualiser sans envoyer sur Telegram
         type: boolean
-        default: true
+        default: false
   schedule:
-    # Horaires UTC : de 05:07 à 06:47 à Paris l’été, avant 7 h.
-    - cron: '7 3 * * *'
-    - cron: '27 3 * * *'
-    - cron: '47 3 * * *'
-    - cron: '7 4 * * *'
-    - cron: '27 4 * * *'
-    - cron: '47 4 * * *'
+    # Quatre tentatives entre 06:05 et 06:50, heure de Paris. Le cache n'autorise qu'un seul envoi.
+    - cron: '5,20,35,50 6 * * *'
+      timezone: Europe/Paris
 
 concurrency:
   group: vigilance-telegram

@@ -9,6 +9,8 @@ import requests
 
 API = "https://public-api.meteofrance.fr/public/DPVigilance/v1/cartevigilance/encours"
 VIGNETTE_API = "https://public-api.meteofrance.fr/public/DPVigilance/v1/vignettenationale-J-et-J1/encours"
+MAIN_CHAT_ID = "@Alerte_meteo"
+PO_CHAT_ID = os.getenv("TELEGRAM_PO_CHAT_ID", "@pyreneesorientales").strip()
 COLORS = {2: "🟡", 3: "🟠", 4: "🔴"}
 PHENOMENA = {
     "1": "vent violent", "2": "pluie-inondation", "3": "orages",
@@ -141,11 +143,36 @@ def fetch_vignette(api_key):
             time.sleep(2 ** attempt)
 
 
-def send_message(token, text):
+def build_message(groups):
+    lines = ["<b>• Vigilances en cours :</b>"]
+    if not groups:
+        lines.append(
+            "🟢 <b>Vigilance verte :</b> aucun département en vigilance jaune, orange ou rouge."
+        )
+    else:
+        for (color, label), departments in sorted(groups.items(), reverse=True):
+            lines.append(
+                f"{COLORS[color]} <b>{html.escape(label)} :</b> "
+                f"{html.escape(', '.join(sorted(departments)))}."
+            )
+    return "\n".join(lines) + "\n\nSource : https://vigilance.meteofrance.fr/fr"
+
+
+def filter_groups(groups, department_code):
+    suffix = f"({department_code})"
+    filtered = {}
+    for key, departments in groups.items():
+        matching = [department for department in departments if department.endswith(suffix)]
+        if matching:
+            filtered[key] = matching
+    return filtered
+
+
+def send_message(token, text, chat_id):
     response = requests.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
         data={
-            "chat_id": "@Alerte_meteo",
+            "chat_id": chat_id,
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
@@ -153,6 +180,24 @@ def send_message(token, text):
         timeout=60,
     )
     response.raise_for_status()
+
+
+def send_to_chat(token, text, vignette, chat_id):
+    if vignette:
+        photo_data = {"chat_id": chat_id}
+        if len(text) <= 1024:
+            photo_data.update({"caption": text, "parse_mode": "HTML"})
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendPhoto",
+            data=photo_data,
+            files={"photo": ("carte-vigilance.png", vignette, "image/png")},
+            timeout=60,
+        )
+        response.raise_for_status()
+        if len(text) > 1024:
+            send_message(token, text, chat_id)
+    else:
+        send_message(token, text, chat_id)
 
 
 def main():
@@ -192,22 +237,15 @@ def main():
                 )
                 groups.setdefault((color, label), []).append(department)
 
-    lines = ["<b>• Vigilances en cours :</b>"]
-    if not groups:
-        lines.append(
-            "🟢 <b>Vigilance verte :</b> aucun département en vigilance jaune, orange ou rouge."
-        )
-    else:
-        for (color, label), departments in sorted(groups.items(), reverse=True):
-            lines.append(
-                f"{COLORS[color]} <b>{html.escape(label)} :</b> "
-                f"{html.escape(', '.join(sorted(departments)))}."
-            )
-    text = "\n".join(lines) + "\n\nSource : https://vigilance.meteofrance.fr/fr"
+    text = build_message(groups)
+    po_groups = filter_groups(groups, "66")
+    po_text = build_message(po_groups)
 
     os.makedirs("output", exist_ok=True)
     with open("output/message.html", "w", encoding="utf-8") as file:
         file.write(text)
+    with open("output/message-po66.html", "w", encoding="utf-8") as file:
+        file.write(po_text)
     with open("output/carte.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False)
 
@@ -217,27 +255,20 @@ def main():
             file.write(vignette)
 
     if os.getenv("DRY_RUN", "true").lower() == "true":
+        print("[Canal national]")
         print(text)
         if groups:
+            print("Carte officielle jointe." if vignette else "Carte officielle indisponible.")
+        print("\n[Canal Pyrénées-Orientales — 66]")
+        print(po_text)
+        if po_groups:
             print("Carte officielle jointe." if vignette else "Carte officielle indisponible.")
         return
 
     token = need("TELEGRAM_BOT_TOKEN")
-    if vignette:
-        photo_data = {"chat_id": "@Alerte_meteo"}
-        if len(text) <= 1024:
-            photo_data.update({"caption": text, "parse_mode": "HTML"})
-        response = requests.post(
-            f"https://api.telegram.org/bot{token}/sendPhoto",
-            data=photo_data,
-            files={"photo": ("carte-vigilance.png", vignette, "image/png")},
-            timeout=60,
-        )
-        response.raise_for_status()
-        if len(text) > 1024:
-            send_message(token, text)
-    else:
-        send_message(token, text)
+    send_to_chat(token, text, vignette, MAIN_CHAT_ID)
+    if PO_CHAT_ID:
+        send_to_chat(token, po_text, vignette if po_groups else None, PO_CHAT_ID)
 
 
 if __name__ == "__main__":

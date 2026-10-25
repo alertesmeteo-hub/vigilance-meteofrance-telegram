@@ -11,6 +11,10 @@ on:
         description: Déclenchement automatique par cron-job.org
         type: boolean
         default: false
+      po_only:
+        description: Tester uniquement le canal Pyrénées-Orientales (66)
+        type: boolean
+        default: false
 
 concurrency:
   group: vigilance-telegram
@@ -50,6 +54,7 @@ jobs:
           MF_API_KEY: ${{ secrets.MF_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: '@Alerte_meteo'
+          TELEGRAM_PO_ONLY: ${{ inputs.po_only && 'true' || 'false' }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: python send_vigilance.py
       - name: Mémoriser l'envoi du jour

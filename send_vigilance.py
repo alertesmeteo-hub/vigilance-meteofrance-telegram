@@ -11,6 +11,7 @@ API = "https://public-api.meteofrance.fr/public/DPVigilance/v1/cartevigilance/en
 VIGNETTE_API = "https://public-api.meteofrance.fr/public/DPVigilance/v1/vignettenationale-J-et-J1/encours"
 MAIN_CHAT_ID = "@Alerte_meteo"
 PO_CHAT_ID = os.getenv("TELEGRAM_PO_CHAT_ID", "@pyreneesorientales").strip()
+PO_ONLY = os.getenv("TELEGRAM_PO_ONLY", "false").lower() == "true"
 COLORS = {2: "🟡", 3: "🟠", 4: "🔴"}
 PHENOMENA = {
     "1": "vent violent", "2": "pluie-inondation", "3": "orages",
@@ -266,6 +267,12 @@ def main():
         return
 
     token = need("TELEGRAM_BOT_TOKEN")
+    if PO_ONLY:
+        if not PO_CHAT_ID:
+            raise RuntimeError("TELEGRAM_PO_ONLY activé mais TELEGRAM_PO_CHAT_ID est vide.")
+        send_to_chat(token, po_text, vignette if po_groups else None, PO_CHAT_ID)
+        return
+
     send_to_chat(token, text, vignette, MAIN_CHAT_ID)
     if PO_CHAT_ID:
         send_to_chat(token, po_text, vignette if po_groups else None, PO_CHAT_ID)

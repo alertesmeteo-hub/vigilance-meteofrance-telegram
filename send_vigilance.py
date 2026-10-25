@@ -169,6 +169,23 @@ def filter_groups(groups, department_code):
     return filtered
 
 
+def log_chat_member(token, chat_id):
+    try:
+        me_response = requests.get(
+            f"https://api.telegram.org/bot{token}/getMe",
+            timeout=60,
+        )
+        me_response.raise_for_status()
+        bot_id = me_response.json()["result"]["id"]
+        response = requests.get(
+            f"https://api.telegram.org/bot{token}/getChatMember",
+            params={"chat_id": chat_id, "user_id": bot_id},
+            timeout=60,
+        )
+        print(f"Telegram getChatMember {chat_id}: {response.status_code} {response.text}")
+    except requests.RequestException as error:
+        print(f"Telegram getChatMember diagnostic unavailable: {error}")
+
 def send_message(token, text, chat_id):
     response = requests.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
@@ -268,6 +285,8 @@ def main():
         return
 
     token = need("TELEGRAM_BOT_TOKEN")
+    target_chat = PO_CHAT_ID if PO_ONLY else MAIN_CHAT_ID
+    log_chat_member(token, target_chat)
     if PO_ONLY:
         if not PO_CHAT_ID:
             raise RuntimeError("TELEGRAM_PO_ONLY activé mais TELEGRAM_PO_CHAT_ID est vide.")

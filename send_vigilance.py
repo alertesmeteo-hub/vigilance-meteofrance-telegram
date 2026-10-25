@@ -180,7 +180,8 @@ def send_message(token, text, chat_id):
         },
         timeout=60,
     )
-    response.raise_for_status()
+    if not response.ok:
+        raise RuntimeError(f"Telegram API {response.status_code}: {response.text}")
 
 
 def send_to_chat(token, text, vignette, chat_id):

@@ -155,7 +155,7 @@ def build_message(groups):
                 f"{COLORS[color]} <b>{html.escape(label)} :</b> "
                 f"{html.escape(', '.join(sorted(departments)))}."
             )
-    return "\n".join(lines) + "\n\nSource : https://vigilance.meteofrance.fr/fr"
+    return "\n".join(lines)
 
 
 def filter_groups(groups, department_code):

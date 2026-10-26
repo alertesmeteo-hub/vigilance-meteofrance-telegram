@@ -118,6 +118,19 @@ DEPARTMENTS = dict(pair.split("|", 1) for pair in """
 """.strip().splitlines())
 
 
+def normalise_department_code(domain_id):
+    """Rattache les sous-zones littorales à leur département parent."""
+    raw_code = str(domain_id or "").upper().strip()
+    if raw_code in DEPARTMENTS:
+        return raw_code
+    for code in sorted(DEPARTMENTS, key=len, reverse=True):
+        if raw_code.startswith(code):
+            suffix = raw_code[len(code):]
+            if suffix and suffix.isdigit():
+                return code
+    return None
+
+
 def need(name):
     value = os.getenv(name, "").strip()
     if not value:
@@ -225,11 +238,10 @@ def main():
 
     groups = {}
     for item in current.get("timelaps", {}).get("domain_ids", []):
-        code = str(item.get("domain_id", "")).upper().zfill(2)
-        name = DEPARTMENTS.get(code)
-        if not name:
+        code = normalise_department_code(item.get("domain_id"))
+        if code is None:
             continue
-        department = f"{name} ({code})"
+        department = f"{DEPARTMENTS[code]} ({code})"
         for phenomenon in item.get("phenomenon_items", []):
             color = int(phenomenon.get("phenomenon_max_color_id", 1))
             if color in COLORS:
@@ -237,7 +249,7 @@ def main():
                     str(phenomenon.get("phenomenon_id")),
                     "phénomène météo",
                 )
-                groups.setdefault((color, label), []).append(department)
+                groups.setdefault((color, label), set()).add(department)
 
     text = build_message(groups)
     po_groups = filter_groups(groups, "66")

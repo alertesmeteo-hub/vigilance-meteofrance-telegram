@@ -288,7 +288,13 @@ def main():
 
     send_to_chat(token, text, vignette, MAIN_CHAT_ID)
     if PO_CHAT_ID:
-        send_to_chat(token, po_text, vignette if po_groups else None, PO_CHAT_ID)
+        try:
+            send_to_chat(token, po_text, vignette if po_groups else None, PO_CHAT_ID)
+        except Exception as error:
+            print(
+                "::warning::Envoi secondaire Point météo ignoré ; "
+                f"Vigi France reste publiée. ({type(error).__name__}: {error})"
+            )
 
 
 if __name__ == "__main__":
